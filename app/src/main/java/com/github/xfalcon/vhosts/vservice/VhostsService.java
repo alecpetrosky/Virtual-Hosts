@@ -51,6 +51,7 @@ import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.Selector;
+import java.util.ArrayList;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -65,6 +66,9 @@ public class VhostsService extends VpnService {
     private static final String VPN_ROUTE6 = "::"; // Intercept everything
     private static String VPN_DNS4 = "8.8.8.8";
     private static String VPN_DNS6 = "2001:4860:4860::8888";
+    private ArrayList<String> vpnDns4  = new ArrayList<>();
+    private ArrayList<String> vpnDns6  = new ArrayList<>();
+
 
     public static final String BROADCAST_VPN_STATE = VhostsService.class.getName() + ".VPN_STATE";
     public static final String ACTION_CONNECT = VhostsService.class.getName() + ".START";
@@ -177,27 +181,31 @@ public class VhostsService extends VpnService {
 
             SharedPreferences sharedPreferences = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
             String server = sharedPreferences.getString("server", "google");
+            vpnDns4.clear();
+            vpnDns6.clear();
             if ((server == null) || (server.equals("google"))) {
                 VPN_DNS4 = getString(R.string.dns_server);
+                vpnDns4.add(VPN_DNS4);
+                vpnDns6.add(VPN_DNS6);
             } else {
                 DnsServersDetector dnsServersDetector = new DnsServersDetector(this);
-                String dns4 = dnsServersDetector.getDns4();
-                if (dns4 != null) {
-                    VPN_DNS4 =  dns4;
-                }
-                String dns6 = dnsServersDetector.getDns6();
-                if (dns6 != null) {
-                    VPN_DNS6 =  dns6;
-                }
+                vpnDns4.addAll(dnsServersDetector.getVpnDns4());
+                vpnDns6.addAll(dnsServersDetector.getVpnDns6());
             }
-            LogUtils.d(TAG, "use dns:" + VPN_DNS4);
 
-            builder.addRoute(VPN_DNS4, 32);
-            builder.addRoute(VPN_DNS6, 128);
+            LogUtils.d(TAG, "use dns:" + vpnDns4.toString() + vpnDns6.toString());
+
+            for (String dnsServer: vpnDns4) {
+                builder.addRoute(dnsServer, 32);
+                builder.addDnsServer(dnsServer);
+            }
+            for (String dnsServer: vpnDns6) {
+                builder.addRoute(dnsServer, 128);
+                builder.addDnsServer(dnsServer);
+            }
 //            builder.addRoute(VPN_ROUTE,0);
 //            builder.addRoute(VPN_ROUTE6,0);
-            builder.addDnsServer(VPN_DNS4);
-            builder.addDnsServer(VPN_DNS6);
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                 String[] whiteList = {"com.android.vending", "com.google.android.apps.docs", "com.google.android.apps.photos", "com.google.android.gm", "com.google.android.apps.translate"};
                 for (String white : whiteList) {
@@ -414,7 +422,7 @@ public class VhostsService extends VpnService {
         }
     }
 
-    public void initializeDiscoveryListener() {
+  public void initializeDiscoveryListener() {
 
         // Instantiate a new DiscoveryListener
         discoveryListener = new NsdManager.DiscoveryListener() {
@@ -481,31 +489,6 @@ public class VhostsService extends VpnService {
         }
     }
 
-    /*
-    private void initializeResolveListener() {
-        resolveListener = new NsdManager.ResolveListener() {
-            String TAG = "Nsd";
-
-            @Override
-            public void onResolveFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                // Called when the resolve fails.  Use the error code to debug.
-                Log.e(TAG, "Resolve failed" + errorCode);
-            }
-
-            @Override
-            public void onServiceResolved(NsdServiceInfo serviceInfo) {
-
-                // Port is being returned as 9. Not needed.
-                //int port = mServiceInfo.getPort();
-
-                String name = sanitizeNdsHostname(serviceInfo.getServiceName());
-                String address = serviceInfo.getHost().getHostAddress();
-                DnsChange.addHost(name, address);
-                Log.d(TAG, String.format("Nsd resolved address: %s = %s", name, address));
-            }
-        };
-    }
-     */
 
     private String sanitizeNdsHostname(String name) {
         if(name.contains(" ")){
@@ -514,13 +497,4 @@ public class VhostsService extends VpnService {
         name = "." + name + ".xz"; // todo: replace me by settings options (local domain + wildcard support)
         return name;
     }
-
-    public static String getVpnDns4() {
-        return VPN_DNS4;
-    }
-
-    public static String getVpnDns6() {
-        return VPN_DNS6;
-    }
-
 }
